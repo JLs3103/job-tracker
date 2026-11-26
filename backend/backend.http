@@ -1,0 +1,29 @@
+@backend_HostAddress = http://localhost:5227
+
+### Get all job postings
+GET {{backend_HostAddress}}/api/jobs?status=ALL&source=ALL&search=
+Accept: application/json
+
+### Get new IT postings from one source
+GET {{backend_HostAddress}}/api/jobs?status=NEW&source=Disnakerja&search=developer
+Accept: application/json
+
+### Fetch and store new IT postings
+POST {{backend_HostAddress}}/api/jobs/refresh
+Accept: application/json
+
+### Mark a posting as saved
+PATCH {{backend_HostAddress}}/api/jobs/1/status
+Content-Type: application/json
+
+{
+  "status": "SAVED"
+}
+
+### A missing posting returns 404
+PATCH {{backend_HostAddress}}/api/jobs/999999/status
+Content-Type: application/json
+
+{
+  "status": "VIEWED"
+}
