@@ -3,6 +3,7 @@ import type {
   JobSource,
   JobStatus,
   RefreshResponse,
+  RefreshStateResponse,
 } from '../types/job'
 
 interface JobFilters {
@@ -26,6 +27,7 @@ const hoursAgo = (hours: number) =>
 const mockJobs: JobPosting[] = [
   {
     id: 1,
+    canRetryExtraction: false,
     externalUrl: 'https://example.com/jobs/demo-cloud-backend',
     source: 'Disnakerja',
     companyName: 'Demo Cloud Nusantara',
@@ -42,6 +44,7 @@ const mockJobs: JobPosting[] = [
   },
   {
     id: 2,
+    canRetryExtraction: false,
     externalUrl: 'https://example.com/jobs/demo-security-analyst',
     source: 'Bukajobs',
     companyName: 'Demo Sagara Security',
@@ -58,6 +61,7 @@ const mockJobs: JobPosting[] = [
   },
   {
     id: 3,
+    canRetryExtraction: false,
     externalUrl: 'https://example.com/jobs/demo-frontend-engineer',
     source: 'BrowseLoker',
     companyName: 'Demo Karsa Digital',
@@ -74,6 +78,7 @@ const mockJobs: JobPosting[] = [
   },
   {
     id: 4,
+    canRetryExtraction: false,
     externalUrl: 'https://example.com/jobs/demo-qa-engineer',
     source: 'LokerBlog',
     companyName: 'Demo Awan Teknologi',
@@ -89,6 +94,7 @@ const mockJobs: JobPosting[] = [
   },
   {
     id: 5,
+    canRetryExtraction: false,
     externalUrl: 'https://example.com/jobs/demo-cloud-ops',
     source: 'Disnakerja',
     companyName: 'Demo Arunika Systems',
@@ -104,6 +110,7 @@ const mockJobs: JobPosting[] = [
   },
   {
     id: 6,
+    canRetryExtraction: false,
     externalUrl: 'https://example.com/jobs/demo-data-analyst',
     source: 'Bukajobs',
     companyName: 'Demo Loka Data',
@@ -119,6 +126,7 @@ const mockJobs: JobPosting[] = [
   },
   {
     id: 7,
+    canRetryExtraction: false,
     externalUrl: 'https://example.com/jobs/demo-it-support',
     source: 'BrowseLoker',
     companyName: 'Demo Reka Informatika',
@@ -135,6 +143,7 @@ const mockJobs: JobPosting[] = [
 ]
 
 let refreshCount = 0
+let mockLastRefresh: string | null = null
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
@@ -142,9 +151,22 @@ function wait(milliseconds: number) {
 
 async function readResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const detail = await response.text()
+    const body = await response.text()
+    let detail = body || response.statusText
+    if (body && response.headers.get('content-type')?.includes('json')) {
+      const problem = JSON.parse(body) as {
+        detail?: unknown
+        title?: unknown
+      }
+      if (typeof problem.detail === 'string') {
+        detail = problem.detail
+      } else if (typeof problem.title === 'string') {
+        detail = problem.title
+      }
+    }
+
     throw new Error(
-      `Backend error (${response.status}): ${detail || response.statusText}`,
+      `Backend error (${response.status}): ${detail}`,
     )
   }
 
@@ -204,6 +226,7 @@ export async function refreshJobs(): Promise<RefreshResponse> {
       const source = mockSources[(refreshCount - 1) % mockSources.length]
       mockJobs.unshift({
         id,
+        canRetryExtraction: false,
         externalUrl: `https://example.com/jobs/demo-refresh-${id}`,
         source,
         companyName: `Demo Talenta Digital ${id}`,
@@ -221,6 +244,7 @@ export async function refreshJobs(): Promise<RefreshResponse> {
     }
 
     const newJobsCount = hasNewJob ? 1 : 0
+    mockLastRefresh = checkedAt
     return {
       newJobsCount,
       message: hasNewJob
@@ -234,6 +258,15 @@ export async function refreshJobs(): Promise<RefreshResponse> {
     method: 'POST',
   })
   return readResponse<RefreshResponse>(response)
+}
+
+export async function getRefreshState(): Promise<RefreshStateResponse> {
+  if (isMockApi) {
+    return { lastSuccessfulRefreshAt: mockLastRefresh }
+  }
+
+  const response = await fetch(`${apiBaseUrl}/api/jobs/refresh-state`)
+  return readResponse<RefreshStateResponse>(response)
 }
 
 export async function updateJobStatus(
@@ -253,6 +286,17 @@ export async function updateJobStatus(
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status }),
+  })
+  return readResponse<JobPosting>(response)
+}
+
+export async function retryJobExtraction(id: number): Promise<JobPosting> {
+  if (isMockApi) {
+    throw new Error('Ekstraksi AI tidak tersedia dalam mode demo.')
+  }
+
+  const response = await fetch(`${apiBaseUrl}/api/jobs/${id}/reextract`, {
+    method: 'POST',
   })
   return readResponse<JobPosting>(response)
 }

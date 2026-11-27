@@ -3,6 +3,8 @@ import type { JobPosting, JobStatus } from '../types/job'
 interface JobCardProps {
   job: JobPosting
   isUpdating: boolean
+  isRetryingExtraction: boolean
+  onRetryExtraction: (id: number) => void
   onStatusChange: (id: number, status: JobStatus) => void
 }
 
@@ -23,6 +25,8 @@ function formatPublishedAt(value: string) {
 export function JobCard({
   job,
   isUpdating,
+  isRetryingExtraction,
+  onRetryExtraction,
   onStatusChange,
 }: JobCardProps) {
   return (
@@ -52,13 +56,35 @@ export function JobCard({
           href={job.externalUrl}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={() => {
-            if (job.status === 'NEW') onStatusChange(job.id, 'VIEWED')
+          onClick={(event) => {
+            const isOpenClick =
+              event.button === 0 && !event.shiftKey && !event.altKey
+
+            if (isOpenClick && !isUpdating && job.status === 'NEW') {
+              onStatusChange(job.id, 'VIEWED')
+            }
+          }}
+          onAuxClick={(event) => {
+            if (event.button === 1 && !isUpdating && job.status === 'NEW') {
+              onStatusChange(job.id, 'VIEWED')
+            }
           }}
         >
           Lihat Lowongan
         </a>
         <div className="secondary-actions" aria-label="Aksi lowongan">
+          {job.canRetryExtraction && (
+            <button
+              className="button button-secondary"
+              type="button"
+              disabled={isRetryingExtraction}
+              aria-busy={isRetryingExtraction}
+              aria-label={`Coba ekstrak ulang untuk ${job.jobTitle}`}
+              onClick={() => onRetryExtraction(job.id)}
+            >
+              {isRetryingExtraction ? 'Mencoba ulang...' : 'Coba ekstrak ulang'}
+            </button>
+          )}
           {job.status !== 'SAVED' && (
             <button
               className="button button-secondary"

@@ -59,10 +59,44 @@ public sealed class JobService(
         return jobs.Select(ToResponse).ToArray();
     }
 
+    public async Task<RefreshStateResponse> GetRefreshStateAsync(
+        CancellationToken cancellationToken)
+    {
+        var refreshState = await dbContext.JobRefreshStates
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                state => state.Id == JobRefreshState.SingletonId,
+                cancellationToken);
+
+        return new RefreshStateResponse(refreshState?.LastSuccessfulRefreshAt);
+    }
+
     public async Task<RefreshResponse> RefreshAsync(
         CancellationToken cancellationToken)
     {
-        var fetchResult = await jobFetcher.FetchAsync(cancellationToken);
+        var refreshedAt = timeProvider.GetUtcNow();
+        var refreshState = await dbContext.JobRefreshStates
+            .SingleOrDefaultAsync(
+                state => state.Id == JobRefreshState.SingletonId,
+                cancellationToken);
+        var sevenDaysAgo = refreshedAt.AddDays(-7);
+        var publishedSince = refreshState is null ||
+            refreshState.LastSuccessfulRefreshAt < sevenDaysAgo
+                ? sevenDaysAgo
+                : refreshState.LastSuccessfulRefreshAt;
+        if (publishedSince > refreshedAt)
+        {
+            publishedSince = refreshedAt;
+        }
+
+        logger.LogInformation(
+            "Checking job postings published since {PublishedSince}; last successful refresh was {LastSuccessfulRefreshAt}",
+            publishedSince,
+            refreshState?.LastSuccessfulRefreshAt);
+
+        var fetchResult = await jobFetcher.FetchAsync(
+            cancellationToken,
+            publishedSince);
         var existingUrls = await dbContext.JobPostings
             .AsNoTracking()
             .Select(job => job.ExternalUrl)
@@ -72,6 +106,7 @@ public sealed class JobService(
             StringComparer.OrdinalIgnoreCase);
         var relevantArticles = fetchResult.Articles
             .Where(article => knownUrls.Add(article.ExternalUrl))
+            .Where(article => article.PublishedAt <= refreshedAt)
             .Where(article =>
                 ItJobFilter.IsRelevant(article.Title, article.CleanContent))
             .ToArray();
@@ -88,8 +123,15 @@ public sealed class JobService(
             var extraction = await aiExtractor.ExtractAsync(
                 article,
                 cancellationToken);
+            if (!extraction.IsItJob)
+            {
+                logger.LogInformation(
+                    "Skipping non-IT job posting after AI classification for {JobUrl}",
+                    article.ExternalUrl);
+                continue;
+            }
 
-            newJobs.Add(new JobPosting
+            var newJob = new JobPosting
             {
                 ExternalUrl = article.ExternalUrl,
                 Source = article.Source,
@@ -100,12 +142,26 @@ public sealed class JobService(
                 Status = JobStatus.NEW,
                 PublishedAt = article.PublishedAt,
                 CreatedAt = timeProvider.GetUtcNow()
-            });
+            };
+            dbContext.JobPostings.Add(newJob);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            newJobs.Add(newJob);
         }
 
-        if (newJobs.Count > 0)
+        if (fetchResult.FailedSources.Count == 0)
         {
-            dbContext.JobPostings.AddRange(newJobs);
+            if (refreshState is null)
+            {
+                dbContext.JobRefreshStates.Add(new JobRefreshState
+                {
+                    LastSuccessfulRefreshAt = refreshedAt
+                });
+            }
+            else
+            {
+                refreshState.LastSuccessfulRefreshAt = refreshedAt;
+            }
+
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
@@ -123,6 +179,72 @@ public sealed class JobService(
             newJobs.Count,
             message,
             timeProvider.GetUtcNow());
+    }
+
+    public async Task<JobPostingResponse> RetryExtractionAsync(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var job = await dbContext.JobPostings
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (job is null)
+        {
+            throw new KeyNotFoundException(
+                $"Job posting with ID {id} was not found.");
+        }
+
+        if (!JobExtractionFallback.IsFallback(
+                job.CompanyName,
+                job.Qualifications))
+        {
+            return ToResponse(job);
+        }
+
+        var fetchResult = await jobFetcher.FetchAsync(
+            cancellationToken,
+            job.PublishedAt,
+            job.Source);
+        if (fetchResult.FailedSources.Contains(
+                job.Source.ToString(),
+                StringComparer.Ordinal))
+        {
+            throw new JobSourcesUnavailableException(
+                $"Unable to fetch job postings from {job.Source}.");
+        }
+
+        var article = fetchResult.Articles.FirstOrDefault(item =>
+            item.ExternalUrl.Equals(
+                job.ExternalUrl,
+                StringComparison.OrdinalIgnoreCase));
+        if (article is null)
+        {
+            throw new JobArticleUnavailableException();
+        }
+
+        var extraction = await aiExtractor.ExtractAsync(
+            article,
+            cancellationToken);
+        if (!extraction.IsItJob)
+        {
+            logger.LogInformation(
+                "AI classification marked existing job {JobId} as non-IT; keeping existing record unchanged.",
+                job.Id);
+            return ToResponse(job);
+        }
+
+        if (JobExtractionFallback.IsFallback(
+                extraction.CompanyName,
+                extraction.Qualifications))
+        {
+            throw new AiExtractionUnavailableException();
+        }
+
+        job.CompanyName = extraction.CompanyName;
+        job.JobTitle = extraction.JobTitle;
+        job.Qualifications = extraction.Qualifications.ToArray();
+        job.Location = extraction.Location;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToResponse(job);
     }
 
     public async Task<JobPostingResponse> UpdateStatusAsync(
@@ -155,7 +277,10 @@ public sealed class JobService(
             job.Location,
             job.Status,
             job.PublishedAt,
-            job.CreatedAt);
+            job.CreatedAt,
+            JobExtractionFallback.IsFallback(
+                job.CompanyName,
+                job.Qualifications));
     }
 
     private static TEnum? ParseFilter<TEnum>(

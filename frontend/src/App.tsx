@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from 'react'
 import { EmptyState } from './components/EmptyState'
 import { Header } from './components/Header'
 import { JobCard } from './components/JobCard'
@@ -7,29 +13,68 @@ import { RefreshBanner } from './components/RefreshBanner'
 import { StatusTabs } from './components/StatusTabs'
 import {
   getJobs,
+  getRefreshState,
   isMockApi,
   refreshJobs,
+  retryJobExtraction,
   updateJobStatus,
 } from './services/jobApi'
 import {
   jobStatuses,
   type JobPosting,
+  type JobSortOrder,
   type JobSource,
   type JobStatus,
   type RefreshResponse,
 } from './types/job'
 import './App.css'
 
+const JOBS_PER_PAGE = 20
+
+type PaginationItem = number | 'ellipsis'
+
+function getPaginationItems(
+  currentPage: number,
+  pageCount: number,
+): PaginationItem[] {
+  if (pageCount <= 7) {
+    return Array.from({ length: pageCount }, (_, index) => index + 1)
+  }
+
+  const firstMiddlePage = Math.max(2, currentPage - 1)
+  const lastMiddlePage = Math.min(pageCount - 1, currentPage + 1)
+  const pages: PaginationItem[] = [1]
+
+  if (firstMiddlePage > 2) {
+    pages.push('ellipsis')
+  }
+
+  for (let page = firstMiddlePage; page <= lastMiddlePage; page += 1) {
+    pages.push(page)
+  }
+
+  if (lastMiddlePage < pageCount - 1) {
+    pages.push('ellipsis')
+  }
+
+  pages.push(pageCount)
+  return pages
+}
+
 function App() {
   const [jobs, setJobs] = useState<JobPosting[]>([])
   const [activeStatus, setActiveStatus] = useState<JobStatus>('NEW')
   const [source, setSource] = useState<JobSource | 'ALL'>('ALL')
+  const [sortOrder, setSortOrder] = useState<JobSortOrder>('newest')
   const [search, setSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageInput, setPageInput] = useState<string | null>(null)
   const [lastRefresh, setLastRefresh] = useState<string | null>(null)
   const [refreshResult, setRefreshResult] = useState<RefreshResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [updatingIds, setUpdatingIds] = useState<number[]>([])
+  const [retryingExtractionIds, setRetryingExtractionIds] = useState<number[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const loadJobs = useCallback(async () => {
@@ -40,9 +85,12 @@ function App() {
   useEffect(() => {
     let active = true
 
-    getJobs()
-      .then((result) => {
-        if (active) setJobs(result)
+    Promise.all([getJobs(), getRefreshState()])
+      .then(([result, refreshState]) => {
+        if (active) {
+          setJobs(result)
+          setLastRefresh(refreshState.lastSuccessfulRefreshAt)
+        }
       })
       .catch((error: unknown) => {
         if (active) {
@@ -90,12 +138,32 @@ function App() {
           .toLocaleLowerCase()
           .includes(normalizedSearch)
       })
-      .sort(
-        (first, second) =>
-          new Date(second.publishedAt).getTime() -
-          new Date(first.publishedAt).getTime(),
-      )
-  }, [activeStatus, jobs, search, source])
+      .sort((first, second) => {
+        const dateDifference =
+          new Date(first.publishedAt).getTime() -
+          new Date(second.publishedAt).getTime()
+
+        if (dateDifference === 0) return first.id - second.id
+        return sortOrder === 'oldest' ? dateDifference : -dateDifference
+      })
+  }, [activeStatus, jobs, search, sortOrder, source])
+
+  const pageCount = Math.max(1, Math.ceil(visibleJobs.length / JOBS_PER_PAGE))
+  const displayedPage = Math.min(currentPage, pageCount)
+  const paginationItems = getPaginationItems(displayedPage, pageCount)
+  const pageJobs = useMemo(
+    () =>
+      visibleJobs.slice(
+        (displayedPage - 1) * JOBS_PER_PAGE,
+        displayedPage * JOBS_PER_PAGE,
+      ),
+    [displayedPage, visibleJobs],
+  )
+
+  const changePage = (page: number) => {
+    setCurrentPage(page)
+    setPageInput(null)
+  }
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
@@ -104,6 +172,7 @@ function App() {
     try {
       const result = await refreshJobs()
       await loadJobs()
+      changePage(1)
       setRefreshResult(result)
       setLastRefresh(result.checkedAt)
     } catch (error) {
@@ -124,6 +193,7 @@ function App() {
       setJobs((current) =>
         current.map((job) => (job.id === id ? updatedJob : job)),
       )
+      setPageInput(null)
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -133,6 +203,44 @@ function App() {
     } finally {
       setUpdatingIds((current) => current.filter((item) => item !== id))
     }
+  }
+
+  const handleRetryExtraction = async (id: number) => {
+    setErrorMessage(null)
+    setRetryingExtractionIds((current) => [...current, id])
+
+    try {
+      const updatedJob = await retryJobExtraction(id)
+      setJobs((current) =>
+        current.map((job) => (job.id === id ? updatedJob : job)),
+      )
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Ekstraksi ulang lowongan gagal.',
+      )
+    } finally {
+      setRetryingExtractionIds((current) =>
+        current.filter((item) => item !== id),
+      )
+    }
+  }
+
+  const handlePageJump = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const requestedPage = Number(pageInput ?? displayedPage)
+
+    if (
+      !Number.isInteger(requestedPage) ||
+      requestedPage < 1 ||
+      requestedPage > pageCount
+    ) {
+      setPageInput(null)
+      return
+    }
+
+    changePage(requestedPage)
   }
 
   return (
@@ -178,13 +286,27 @@ function App() {
         <StatusTabs
           activeStatus={activeStatus}
           counts={counts}
-          onStatusChange={setActiveStatus}
+          onStatusChange={(status) => {
+            setActiveStatus(status)
+            changePage(1)
+          }}
         />
         <JobFilters
           search={search}
           source={source}
-          onSearchChange={setSearch}
-          onSourceChange={setSource}
+          sortOrder={sortOrder}
+          onSearchChange={(value) => {
+            setSearch(value)
+            changePage(1)
+          }}
+          onSourceChange={(value) => {
+            setSource(value)
+            changePage(1)
+          }}
+          onSortOrderChange={(value) => {
+            setSortOrder(value)
+            changePage(1)
+          }}
         />
 
         {isLoading ? (
@@ -193,16 +315,109 @@ function App() {
             <p>Memuat lowongan...</p>
           </section>
         ) : visibleJobs.length > 0 ? (
-          <section className="job-list" aria-label="Daftar lowongan">
-            {visibleJobs.map((job) => (
-              <JobCard
-                key={job.id}
-                job={job}
-                isUpdating={updatingIds.includes(job.id)}
-                onStatusChange={handleStatusChange}
-              />
-            ))}
-          </section>
+          <>
+            <section className="job-list" aria-label="Daftar lowongan">
+              {pageJobs.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  isUpdating={updatingIds.includes(job.id)}
+                  isRetryingExtraction={retryingExtractionIds.includes(job.id)}
+                  onRetryExtraction={handleRetryExtraction}
+                  onStatusChange={handleStatusChange}
+                />
+              ))}
+            </section>
+            {pageCount > 1 && (
+              <nav
+                className="pagination"
+                aria-label="Navigasi halaman lowongan"
+              >
+                <div className="pagination-main">
+                  <div className="pagination-navigation">
+                    <button
+                      className="button button-secondary pagination-edge"
+                      type="button"
+                      disabled={displayedPage === 1}
+                      onClick={() => changePage(1)}
+                    >
+                      Awal
+                    </button>
+                    <button
+                      className="button button-secondary pagination-edge"
+                      type="button"
+                      disabled={displayedPage === 1}
+                      onClick={() => changePage(displayedPage - 1)}
+                    >
+                      Sebelumnya
+                    </button>
+                    {paginationItems.map((item, index) =>
+                      item === 'ellipsis' ? (
+                        <span
+                          className="pagination-ellipsis"
+                          aria-hidden="true"
+                          key={`ellipsis-${index}`}
+                        >
+                          ...
+                        </span>
+                      ) : (
+                        <button
+                          className={`button button-secondary pagination-page${
+                            item === displayedPage ? ' is-current' : ''
+                          }`}
+                          type="button"
+                          aria-label={`Halaman ${item}`}
+                          aria-current={
+                            item === displayedPage ? 'page' : undefined
+                          }
+                          key={item}
+                          onClick={() => changePage(item)}
+                        >
+                          {item}
+                        </button>
+                      ),
+                    )}
+                    <button
+                      className="button button-secondary pagination-edge"
+                      type="button"
+                      disabled={displayedPage === pageCount}
+                      onClick={() => changePage(displayedPage + 1)}
+                    >
+                      Berikutnya
+                    </button>
+                    <button
+                      className="button button-secondary pagination-edge"
+                      type="button"
+                      disabled={displayedPage === pageCount}
+                      onClick={() => changePage(pageCount)}
+                    >
+                      Akhir
+                    </button>
+                  </div>
+                  <span className="pagination-summary" aria-live="polite">
+                    Halaman {displayedPage} dari {pageCount}
+                  </span>
+                </div>
+                <form className="pagination-jump" onSubmit={handlePageJump}>
+                  <label>
+                    <span className="field-label">Ke halaman</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max={pageCount}
+                      step="1"
+                      required
+                      value={pageInput ?? String(displayedPage)}
+                      onChange={(event) => setPageInput(event.target.value)}
+                    />
+                  </label>
+                  <button className="button button-secondary" type="submit">
+                    Buka
+                  </button>
+                </form>
+              </nav>
+            )}
+          </>
         ) : (
           <EmptyState
             hasSearch={Boolean(search.trim())}

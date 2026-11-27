@@ -1,10 +1,16 @@
-import { jobSources, type JobSource } from '../types/job'
+import {
+  jobSources,
+  type JobSortOrder,
+  type JobSource,
+} from '../types/job'
 
 interface JobFiltersProps {
   search: string
   source: JobSource | 'ALL'
+  sortOrder: JobSortOrder
   onSearchChange: (value: string) => void
   onSourceChange: (value: JobSource | 'ALL') => void
+  onSortOrderChange: (value: JobSortOrder) => void
 }
 
 const sourceLabels: Record<JobSource | 'ALL', string> = {
@@ -18,8 +24,10 @@ const sourceLabels: Record<JobSource | 'ALL', string> = {
 export function JobFilters({
   search,
   source,
+  sortOrder,
   onSearchChange,
   onSourceChange,
+  onSortOrderChange,
 }: JobFiltersProps) {
   return (
     <div className="job-filters">
@@ -52,6 +60,20 @@ export function JobFilters({
               {sourceLabels[jobSource]}
             </option>
           ))}
+        </select>
+      </label>
+      <label className="sort-field">
+        <span className="field-label">Urutkan</span>
+        <select
+          value={sortOrder}
+          onChange={(event) =>
+            onSortOrderChange(
+              event.target.value === 'oldest' ? 'oldest' : 'newest',
+            )
+          }
+        >
+          <option value="newest">Terbaru</option>
+          <option value="oldest">Terlama</option>
         </select>
       </label>
     </div>

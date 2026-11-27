@@ -10,7 +10,14 @@ public interface IJobService
         string? search,
         CancellationToken cancellationToken);
 
+    Task<RefreshStateResponse> GetRefreshStateAsync(
+        CancellationToken cancellationToken);
+
     Task<RefreshResponse> RefreshAsync(CancellationToken cancellationToken);
+
+    Task<JobPostingResponse> RetryExtractionAsync(
+        int id,
+        CancellationToken cancellationToken);
 
     Task<JobPostingResponse> UpdateStatusAsync(
         int id,

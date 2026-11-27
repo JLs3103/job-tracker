@@ -10,6 +10,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
 {
     public DbSet<JobPosting> JobPostings => Set<JobPosting>();
 
+    public DbSet<JobRefreshState> JobRefreshStates => Set<JobRefreshState>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<JobPosting>();
@@ -44,6 +46,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 value => DateTimeOffset.FromUnixTimeMilliseconds(value))
             .IsRequired();
         entity.Property(job => job.CreatedAt)
+            .HasConversion(
+                value => value.ToUnixTimeMilliseconds(),
+                value => DateTimeOffset.FromUnixTimeMilliseconds(value))
+            .IsRequired();
+
+        var refreshState = modelBuilder.Entity<JobRefreshState>();
+        refreshState.HasKey(state => state.Id);
+        refreshState.Property(state => state.LastSuccessfulRefreshAt)
             .HasConversion(
                 value => value.ToUnixTimeMilliseconds(),
                 value => DateTimeOffset.FromUnixTimeMilliseconds(value))

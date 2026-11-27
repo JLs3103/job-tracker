@@ -17,8 +17,11 @@ export const jobSources = [
 
 export type JobSource = (typeof jobSources)[number]
 
+export type JobSortOrder = 'newest' | 'oldest'
+
 export interface JobPosting {
   id: number
+  canRetryExtraction: boolean
   externalUrl: string
   source: JobSource
   companyName: string
@@ -34,4 +37,8 @@ export interface RefreshResponse {
   newJobsCount: number
   message: string
   checkedAt: string
+}
+
+export interface RefreshStateResponse {
+  lastSuccessfulRefreshAt: string | null
 }

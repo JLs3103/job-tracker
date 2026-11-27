@@ -36,6 +36,15 @@ builder.Services.AddRateLimiter(options =>
             limiter.QueueLimit = 0;
             limiter.AutoReplenishment = true;
         });
+    options.AddFixedWindowLimiter(
+        "job-ai-retry",
+        limiter =>
+        {
+            limiter.PermitLimit = 5;
+            limiter.Window = TimeSpan.FromMinutes(1);
+            limiter.QueueLimit = 0;
+            limiter.AutoReplenishment = true;
+        });
 });
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(
@@ -51,10 +60,15 @@ builder.Services.AddHttpClient<IJobFetcherService, JobFetcherService>(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
 });
-builder.Services.AddHttpClient<IAiExtractorService, AiExtractorService>(client =>
+builder.Services.AddHttpClient("Ollama", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(2);
+});
+builder.Services.AddHttpClient("Gemini", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(35);
 });
+builder.Services.AddScoped<IAiExtractorService, AiExtractorService>();
 
 var app = builder.Build();
 

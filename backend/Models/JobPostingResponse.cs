@@ -11,4 +11,5 @@ public sealed record JobPostingResponse(
     string? Location,
     JobStatus Status,
     DateTimeOffset PublishedAt,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    bool CanRetryExtraction);

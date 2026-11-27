@@ -68,6 +68,20 @@ namespace backend.Migrations
 
                     b.ToTable("JobPostings");
                 });
+
+            modelBuilder.Entity("backend.Models.JobRefreshState", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("LastSuccessfulRefreshAt")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("JobRefreshStates");
+                });
 #pragma warning restore 612, 618
         }
     }

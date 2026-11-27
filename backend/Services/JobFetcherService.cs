@@ -10,17 +10,20 @@ public sealed class JobFetcherService(
     HttpClient httpClient,
     ILogger<JobFetcherService> logger) : IJobFetcherService
 {
+    private const int FeedPageSize = 100;
+    private const string BloggerFeedHost = "www.blogger.com";
+
     private static readonly IReadOnlyDictionary<JobSource, string> SourceUrls =
         new Dictionary<JobSource, string>
         {
             [JobSource.LokerBlog] =
-                "https://www.lokerblog.com/feeds/posts/default?alt=json&max-results=15",
+                $"https://www.lokerblog.com/feeds/posts/default?alt=json&max-results={FeedPageSize}",
             [JobSource.Bukajobs] =
-                "https://bukajobs.com/wp-json/wp/v2/posts?per_page=15",
+                $"https://bukajobs.com/wp-json/wp/v2/posts?per_page={FeedPageSize}",
             [JobSource.BrowseLoker] =
-                "https://browseloker.lowongankerjacareer.com/wp-json/wp/v2/posts?per_page=15",
+                $"https://browseloker.lowongankerjacareer.com/wp-json/wp/v2/posts?per_page={FeedPageSize}",
             [JobSource.Disnakerja] =
-                "https://www.disnakerja.com/wp-json/wp/v2/posts?per_page=15"
+                $"https://www.disnakerja.com/wp-json/wp/v2/posts?per_page={FeedPageSize}"
         };
 
     private static readonly Regex ScriptAndStylePattern = new(
@@ -36,17 +39,24 @@ public sealed class JobFetcherService(
         RegexOptions.Compiled);
 
     public async Task<JobFetchResult> FetchAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTimeOffset? publishedSince = null,
+        JobSource? source = null)
     {
-        var fetchTasks = SourceUrls.Select(pair =>
-            FetchSourceAsync(pair.Key, pair.Value, cancellationToken));
+        var fetchTasks = SourceUrls
+            .Where(pair => source is null || pair.Key == source)
+            .Select(pair =>
+                FetchSourceAsync(
+                    pair.Key,
+                    pair.Value,
+                    publishedSince,
+                    cancellationToken));
         var results = await Task.WhenAll(fetchTasks);
         var failedSources = results
             .Where(result => result.Failure is not null)
             .Select(result => result.Source.ToString())
             .ToArray();
         var articles = results
-            .Where(result => result.Failure is null)
             .SelectMany(result => result.Articles)
             .ToArray();
 
@@ -62,23 +72,77 @@ public sealed class JobFetcherService(
     private async Task<SourceFetchResult> FetchSourceAsync(
         JobSource source,
         string url,
+        DateTimeOffset? publishedSince,
         CancellationToken cancellationToken)
     {
+        var articles = new List<JobArticle>();
+        var seenArticleUrls = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+        var requestedUrls = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+        string? currentUrl = url;
+        var page = 1;
+        int? totalPages = null;
+
         try
         {
-            using var response = await httpClient.GetAsync(
-                url,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
-            response.EnsureSuccessStatusCode();
+            while (currentUrl is not null && requestedUrls.Add(currentUrl))
+            {
+                using var response = await httpClient.GetAsync(
+                    currentUrl,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken);
+                response.EnsureSuccessStatusCode();
 
-            await using var stream =
-                await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var document =
-                await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            var articles = source == JobSource.LokerBlog
-                ? ParseBloggerFeed(document.RootElement, source)
-                : ParseWordPressFeed(document.RootElement, source);
+                if (source != JobSource.LokerBlog)
+                {
+                    totalPages = ReadWordPressTotalPages(response);
+                }
+
+                await using var stream =
+                    await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var document = await JsonDocument.ParseAsync(
+                    stream,
+                    cancellationToken: cancellationToken);
+                var pageArticles = source == JobSource.LokerBlog
+                    ? ParseBloggerFeed(document.RootElement, source)
+                    : ParseWordPressFeed(document.RootElement, source);
+
+                var newPageArticles = pageArticles
+                    .Where(article => seenArticleUrls.Add(article.ExternalUrl))
+                    .ToArray();
+                if (newPageArticles.Length == 0)
+                {
+                    break;
+                }
+
+                articles.AddRange(newPageArticles.Where(article =>
+                    publishedSince is null ||
+                    article.PublishedAt >= publishedSince.Value));
+
+                if (publishedSince is not null &&
+                    newPageArticles.All(article =>
+                        article.PublishedAt < publishedSince.Value))
+                {
+                    break;
+                }
+
+                if (source == JobSource.LokerBlog)
+                {
+                    currentUrl = ReadBloggerNextUrl(document.RootElement);
+                }
+                else if (totalPages is not null
+                    ? page >= totalPages.Value
+                    : pageArticles.Count < FeedPageSize)
+                {
+                    currentUrl = null;
+                }
+                else
+                {
+                    page++;
+                    currentUrl = $"{url}&page={page}";
+                }
+            }
 
             return new SourceFetchResult(source, articles, null);
         }
@@ -88,7 +152,7 @@ public sealed class JobFetcherService(
                 exception,
                 "Unable to fetch job postings from {JobSource}",
                 source);
-            return new SourceFetchResult(source, [], exception);
+            return new SourceFetchResult(source, articles, exception);
         }
         catch (JsonException exception)
         {
@@ -96,7 +160,7 @@ public sealed class JobFetcherService(
                 exception,
                 "Invalid JSON received from {JobSource}",
                 source);
-            return new SourceFetchResult(source, [], exception);
+            return new SourceFetchResult(source, articles, exception);
         }
         catch (OperationCanceledException exception)
             when (!cancellationToken.IsCancellationRequested)
@@ -105,7 +169,7 @@ public sealed class JobFetcherService(
                 exception,
                 "Timed out while fetching job postings from {JobSource}",
                 source);
-            return new SourceFetchResult(source, [], exception);
+            return new SourceFetchResult(source, articles, exception);
         }
     }
 
@@ -147,7 +211,8 @@ public sealed class JobFetcherService(
                 CleanText(content),
                 ValidateUrl(externalUrl),
                 ParseDate(BloggerText(entry, "published")) ??
-                DateTimeOffset.UtcNow));
+                throw new JsonException(
+                    "A Blogger entry has an invalid publication date.")));
         }
 
         return articles;
@@ -184,10 +249,60 @@ public sealed class JobFetcherService(
                 ValidateUrl(externalUrl),
                 ParseDate(ReadString(post, "date_gmt")) ??
                 ParseDate(ReadString(post, "date")) ??
-                DateTimeOffset.UtcNow));
+                throw new JsonException(
+                    $"A {source} post has an invalid publication date.")));
         }
 
         return articles;
+    }
+
+    private static string? ReadBloggerNextUrl(JsonElement root)
+    {
+        if (!root.TryGetProperty("feed", out var feed) ||
+            feed.ValueKind != JsonValueKind.Object ||
+            !feed.TryGetProperty("link", out var links) ||
+            links.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var link in links.EnumerateArray())
+        {
+            if (ReadString(link, "rel") != "next")
+            {
+                continue;
+            }
+
+            var href = ReadString(link, "href");
+            if (!Uri.TryCreate(href, UriKind.Absolute, out var nextUri) ||
+                nextUri.Scheme != Uri.UriSchemeHttps ||
+                !nextUri.Host.Equals(
+                    BloggerFeedHost,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new JsonException(
+                    "The Blogger feed returned an invalid next-page URL.");
+            }
+
+            return nextUri.ToString();
+        }
+
+        return null;
+    }
+
+    private static int? ReadWordPressTotalPages(HttpResponseMessage response)
+    {
+        return response.Headers.TryGetValues(
+                "X-WP-TotalPages",
+                out var values) &&
+            int.TryParse(
+                values.FirstOrDefault(),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var totalPages) &&
+            totalPages > 0
+                ? totalPages
+                : null;
     }
 
     private static string? BloggerText(JsonElement entry, string propertyName)

@@ -2,6 +2,12 @@ node_modules/
 frontend/dist/
 backend/bin/
 backend/obj/
+backend.Tests/bin/
+backend.Tests/obj/
+[Bb]in/
+[Oo]bj/
+__pycache__/
+*.py[cod]
 *.db
 *.db-shm
 *.db-wal
@@ -9,3 +15,4 @@ backend/obj/
 .env.local
 backend/appsettings.Development.json
 documentation/
+clear_jobs.py
