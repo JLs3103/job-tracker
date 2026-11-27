@@ -6,7 +6,11 @@ public sealed record JobExtraction(
     string JobTitle,
     IReadOnlyList<string> Qualifications,
     string? Location,
-    bool IsItJob = true);
+    bool IsItJob = true,
+    int? MatchScore = null,
+    string? MatchReason = null,
+    IReadOnlyList<string>? TargetRoles = null,
+    IReadOnlyList<string>? TechnicalSkills = null);
 
 public static class JobExtractionFallback
 {

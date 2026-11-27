@@ -138,7 +138,11 @@ public sealed class JobService(
                 CompanyName = extraction.CompanyName,
                 JobTitle = extraction.JobTitle,
                 Qualifications = extraction.Qualifications.ToArray(),
+                TargetRoles = extraction.TargetRoles?.ToArray() ?? [],
+                TechnicalSkills = extraction.TechnicalSkills?.ToArray() ?? [],
                 Location = extraction.Location,
+                MatchScore = extraction.MatchScore,
+                MatchReason = extraction.MatchReason,
                 Status = JobStatus.NEW,
                 PublishedAt = article.PublishedAt,
                 CreatedAt = timeProvider.GetUtcNow()
@@ -242,7 +246,11 @@ public sealed class JobService(
         job.CompanyName = extraction.CompanyName;
         job.JobTitle = extraction.JobTitle;
         job.Qualifications = extraction.Qualifications.ToArray();
+        job.TargetRoles = extraction.TargetRoles?.ToArray() ?? [];
+        job.TechnicalSkills = extraction.TechnicalSkills?.ToArray() ?? [];
         job.Location = extraction.Location;
+        job.MatchScore = extraction.MatchScore;
+        job.MatchReason = extraction.MatchReason;
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToResponse(job);
     }
@@ -274,7 +282,11 @@ public sealed class JobService(
             job.CompanyName,
             job.JobTitle,
             job.Qualifications,
+            job.TargetRoles,
+            job.TechnicalSkills,
             job.Location,
+            job.MatchScore,
+            job.MatchReason,
             job.Status,
             job.PublishedAt,
             job.CreatedAt,

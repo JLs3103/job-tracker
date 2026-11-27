@@ -1,4 +1,5 @@
 import type {
+  CandidateProfile,
   JobPosting,
   JobSource,
   JobStatus,
@@ -37,7 +38,11 @@ const mockJobs: JobPosting[] = [
       'Memahami REST API dan SQL',
       'Terbuka untuk lulusan baru',
     ],
+    targetRoles: ['Backend Developer', 'Full Stack Developer'],
+    technicalSkills: ['C#', 'Node.js', 'REST API', 'SQL'],
     location: 'Jakarta Selatan',
+    matchScore: 86,
+    matchReason: 'Cocok dengan skill C#, REST API, dan terbuka untuk lulusan baru.',
     status: 'NEW',
     publishedAt: hoursAgo(2),
     createdAt: hoursAgo(2),
@@ -54,7 +59,11 @@ const mockJobs: JobPosting[] = [
       'Tertarik pada incident response',
       'Bersedia bekerja dengan sistem shift',
     ],
+    targetRoles: ['SOC Analyst', 'IT Security / Blue Team'],
+    technicalSkills: ['Linux', 'Jaringan', 'Incident Response', 'SOC'],
     location: 'Bandung',
+    matchScore: 91,
+    matchReason: 'Sesuai target Blue Team / SOC Analyst dan pemahaman dasar jaringan serta Linux.',
     status: 'NEW',
     publishedAt: hoursAgo(5),
     createdAt: hoursAgo(5),
@@ -71,7 +80,11 @@ const mockJobs: JobPosting[] = [
       'Memahami responsive design',
       'Memiliki portofolio proyek web',
     ],
+    targetRoles: ['Frontend Developer'],
+    technicalSkills: ['React', 'TypeScript', 'Responsive Design'],
     location: 'Yogyakarta',
+    matchScore: 94,
+    matchReason: 'Sangat cocok dengan keahlian React dan TypeScript untuk posisi Frontend Engineer.',
     status: 'NEW',
     publishedAt: hoursAgo(9),
     createdAt: hoursAgo(9),
@@ -87,7 +100,11 @@ const mockJobs: JobPosting[] = [
       'Memahami software testing',
       'Teliti dalam menulis test case',
     ],
+    targetRoles: ['Software QA Engineer'],
+    technicalSkills: ['Software Testing', 'Test Case'],
     location: 'Remote',
+    matchScore: 62,
+    matchReason: 'Relevan di bidang IT, namun fokus pada QA testing dibandingkan pengembangan atau security.',
     status: 'VIEWED',
     publishedAt: hoursAgo(28),
     createdAt: hoursAgo(28),
@@ -103,7 +120,11 @@ const mockJobs: JobPosting[] = [
       'Memahami Linux dan jaringan komputer',
       'Mengenal layanan cloud',
     ],
+    targetRoles: ['Cloud Operations', 'Sysadmin'],
+    technicalSkills: ['Linux', 'Jaringan', 'Cloud'],
     location: 'Surabaya',
+    matchScore: 74,
+    matchReason: 'Mendukung keahlian Linux dan jaringan komputer pada lingkungan cloud.',
     status: 'SAVED',
     publishedAt: hoursAgo(44),
     createdAt: hoursAgo(44),
@@ -119,7 +140,11 @@ const mockJobs: JobPosting[] = [
       'Menguasai SQL dasar',
       'Mampu menyampaikan temuan dengan jelas',
     ],
+    targetRoles: ['Data Analyst'],
+    technicalSkills: ['SQL'],
     location: 'Jakarta',
+    matchScore: 55,
+    matchReason: 'Menggunakan SQL dasar, namun peran berfokus pada analisis data bisnis.',
     status: 'APPLIED',
     publishedAt: hoursAgo(72),
     createdAt: hoursAgo(72),
@@ -135,7 +160,11 @@ const mockJobs: JobPosting[] = [
       'Memahami troubleshooting perangkat',
       'Komunikatif dan berorientasi pada layanan',
     ],
+    targetRoles: ['IT Support'],
+    technicalSkills: ['Troubleshooting', 'Hardware', 'Software'],
     location: 'Semarang',
+    matchScore: 78,
+    matchReason: 'Sesuai dengan target posisi IT Support dan troubleshooting perangkat.',
     status: 'IGNORED',
     publishedAt: hoursAgo(96),
     createdAt: hoursAgo(96),
@@ -144,6 +173,27 @@ const mockJobs: JobPosting[] = [
 
 let refreshCount = 0
 let mockLastRefresh: string | null = null
+let mockProfile: CandidateProfile = {
+  targetRoles: [
+    'Full Stack Developer',
+    'Frontend Developer',
+    'IT Security / Blue Team',
+    'SOC Analyst',
+    'IT Support',
+  ],
+  technicalSkills: [
+    'React',
+    'TypeScript',
+    'C#',
+    '.NET',
+    'Linux',
+    'Jaringan',
+    'SOC',
+  ],
+  experienceLevel: 'Fresh Graduate',
+  summary:
+    'Lulusan baru IT dengan fokus Full Stack, Frontend, IT Security / Blue Team, dan IT Support.',
+}
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
@@ -236,7 +286,11 @@ export async function refreshJobs(): Promise<RefreshResponse> {
           'Mampu menyelesaikan masalah secara sistematis',
           'Terbuka untuk lulusan baru',
         ],
+        targetRoles: ['IT Support'],
+        technicalSkills: ['Sistem Operasi', 'Jaringan'],
         location: 'Indonesia',
+        matchScore: 80,
+        matchReason: 'Cocok untuk lulusan baru dengan target IT Support.',
         status: 'NEW',
         publishedAt: checkedAt,
         createdAt: checkedAt,
@@ -299,4 +353,57 @@ export async function retryJobExtraction(id: number): Promise<JobPosting> {
     method: 'POST',
   })
   return readResponse<JobPosting>(response)
+}
+
+export async function getProfile(): Promise<CandidateProfile> {
+  if (isMockApi) {
+    return {
+      ...mockProfile,
+      targetRoles: [...mockProfile.targetRoles],
+      technicalSkills: [...mockProfile.technicalSkills],
+    }
+  }
+
+  const response = await fetch(`${apiBaseUrl}/api/profile`)
+  return readResponse<CandidateProfile>(response)
+}
+
+export async function updateProfile(
+  profile: CandidateProfile,
+): Promise<CandidateProfile> {
+  if (isMockApi) {
+    mockProfile = {
+      ...profile,
+      targetRoles: [...profile.targetRoles],
+      technicalSkills: [...profile.technicalSkills],
+    }
+    return getProfile()
+  }
+
+  const response = await fetch(`${apiBaseUrl}/api/profile`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  })
+  return readResponse<CandidateProfile>(response)
+}
+
+export async function parseCvProfile(file: File): Promise<CandidateProfile> {
+  if (isMockApi) {
+    await wait(500)
+    return {
+      targetRoles: ['Full Stack Developer', 'Frontend Developer', 'Backend Developer'],
+      technicalSkills: ['React', 'TypeScript', 'C#', '.NET', 'PostgreSQL', 'Docker'],
+      experienceLevel: 'Fresh Graduate',
+      summary: `Ringkasan otomatis dari ${file.name}: lulusan baru IT dengan fokus pengembangan aplikasi web React, TypeScript, dan .NET.`,
+    }
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await fetch(`${apiBaseUrl}/api/profile/parse-cv`, {
+    method: 'POST',
+    body: formData,
+  })
+  return readResponse<CandidateProfile>(response)
 }

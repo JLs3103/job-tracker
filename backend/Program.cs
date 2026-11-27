@@ -53,6 +53,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.Configure<AiOptions>(
     builder.Configuration.GetSection(AiOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IProfileService, ProfileService>();
 builder.Services.AddScoped<IJobService, JobService>();
 builder.Services.AddHttpClient<IJobFetcherService, JobFetcherService>(client =>
 {

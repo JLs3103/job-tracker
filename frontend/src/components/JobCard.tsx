@@ -2,6 +2,7 @@ import type { JobPosting, JobStatus } from '../types/job'
 
 interface JobCardProps {
   job: JobPosting
+  profileSkills?: string[]
   isUpdating: boolean
   isRetryingExtraction: boolean
   onRetryExtraction: (id: number) => void
@@ -22,17 +23,39 @@ function formatPublishedAt(value: string) {
   return publishedFormatter.format(-Math.floor(hours / 24), 'day')
 }
 
+function getMatchTier(score: number): 'high' | 'medium' | 'low' {
+  if (score >= 75) return 'high'
+  if (score >= 50) return 'medium'
+  return 'low'
+}
+
 export function JobCard({
   job,
+  profileSkills = [],
   isUpdating,
   isRetryingExtraction,
   onRetryExtraction,
   onStatusChange,
 }: JobCardProps) {
+  const normalizedProfileSkills = new Set(
+    profileSkills.map((skill) => skill.trim().toLocaleLowerCase()),
+  )
+  const targetRoles = job.targetRoles ?? []
+  const technicalSkills = job.technicalSkills ?? []
+
   return (
     <article className="job-card">
       <div className="job-card-topline">
-        <span className="source-label">{job.source}</span>
+        <div className="job-card-meta-left">
+          <span className="source-label">{job.source}</span>
+          {job.matchScore !== null && (
+            <span
+              className={`match-badge match-${getMatchTier(job.matchScore)}`}
+            >
+              {job.matchScore}% Cocok
+            </span>
+          )}
+        </div>
         <time dateTime={job.publishedAt}>{formatPublishedAt(job.publishedAt)}</time>
       </div>
 
@@ -43,6 +66,47 @@ export function JobCard({
         </div>
         {job.location && <span className="location-label">{job.location}</span>}
       </div>
+
+      {job.matchReason && (
+        <p className="match-reason">{job.matchReason}</p>
+      )}
+
+      {(targetRoles.length > 0 || technicalSkills.length > 0) && (
+        <div className="job-taxonomy">
+          {targetRoles.length > 0 && (
+            <div className="job-taxonomy-row">
+              <span className="taxonomy-label">Target Peran:</span>
+              <ul className="taxonomy-chips" aria-label="Target peran lowongan">
+                {targetRoles.map((role) => (
+                  <li className="role-chip" key={role}>
+                    {role}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {technicalSkills.length > 0 && (
+            <div className="job-taxonomy-row">
+              <span className="taxonomy-label">Skill Teknis:</span>
+              <ul className="taxonomy-chips" aria-label="Skill teknis lowongan">
+                {technicalSkills.map((skill) => {
+                  const isMatched = normalizedProfileSkills.has(
+                    skill.trim().toLocaleLowerCase(),
+                  )
+                  return (
+                    <li
+                      className={`skill-chip${isMatched ? ' is-matched' : ''}`}
+                      key={skill}
+                    >
+                      {skill}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       <ul className="qualification-list">
         {job.qualifications.map((qualification) => (

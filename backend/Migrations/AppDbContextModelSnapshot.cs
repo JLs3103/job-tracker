@@ -44,6 +44,13 @@ namespace backend.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("MatchReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("MatchScore")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("PublishedAt")
                         .HasColumnType("INTEGER");
 
@@ -56,6 +63,14 @@ namespace backend.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetRoles")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TechnicalSkills")
                         .IsRequired()
                         .HasColumnType("TEXT");
 

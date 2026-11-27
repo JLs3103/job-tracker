@@ -17,7 +17,14 @@ export const jobSources = [
 
 export type JobSource = (typeof jobSources)[number]
 
-export type JobSortOrder = 'newest' | 'oldest'
+export type JobSortOrder = 'newest' | 'oldest' | 'match'
+
+export interface CandidateProfile {
+  targetRoles: string[]
+  technicalSkills: string[]
+  experienceLevel: string
+  summary: string
+}
 
 export interface JobPosting {
   id: number
@@ -27,7 +34,11 @@ export interface JobPosting {
   companyName: string
   jobTitle: string
   qualifications: string[]
+  targetRoles: string[]
+  technicalSkills: string[]
   location: string | null
+  matchScore: number | null
+  matchReason: string | null
   status: JobStatus
   publishedAt: string
   createdAt: string

@@ -2,6 +2,7 @@ using System.Text.Json;
 using backend.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace backend.Data;
 
@@ -25,21 +26,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         entity.Property(job => job.CompanyName).HasMaxLength(300).IsRequired();
         entity.Property(job => job.JobTitle).HasMaxLength(300).IsRequired();
         entity.Property(job => job.Location).HasMaxLength(300);
+        entity.Property(job => job.MatchReason).HasMaxLength(500);
         entity.Property(job => job.Status).HasConversion<string>().IsRequired();
-        var qualificationsProperty = entity.Property(job => job.Qualifications)
-            .HasConversion(
-                qualifications => JsonSerializer.Serialize(qualifications),
-                json => JsonSerializer.Deserialize<string[]>(json) ??
-                    Array.Empty<string>());
-        qualificationsProperty.Metadata.SetValueComparer(
-            new ValueComparer<string[]>(
-                (left, right) => left.SequenceEqual(right),
-                value => value.Aggregate(
-                    0,
-                    (hash, qualification) =>
-                        HashCode.Combine(hash, qualification.GetHashCode())),
-                value => value.ToArray()));
-        qualificationsProperty.IsRequired();
+        ConfigureStringArray(entity.Property(job => job.Qualifications));
+        ConfigureStringArray(entity.Property(job => job.TargetRoles));
+        ConfigureStringArray(entity.Property(job => job.TechnicalSkills));
         entity.Property(job => job.PublishedAt)
             .HasConversion(
                 value => value.ToUnixTimeMilliseconds(),
@@ -58,5 +49,23 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
                 value => value.ToUnixTimeMilliseconds(),
                 value => DateTimeOffset.FromUnixTimeMilliseconds(value))
             .IsRequired();
+    }
+
+    private static void ConfigureStringArray(PropertyBuilder<string[]> property)
+    {
+        property
+            .HasConversion(
+                items => JsonSerializer.Serialize(items),
+                json => string.IsNullOrWhiteSpace(json)
+                    ? Array.Empty<string>()
+                    : JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>())
+            .Metadata.SetValueComparer(
+                new ValueComparer<string[]>(
+                    (left, right) => left.SequenceEqual(right),
+                    value => value.Aggregate(
+                        0,
+                        (hash, item) => HashCode.Combine(hash, item.GetHashCode())),
+                    value => value.ToArray()));
+        property.IsRequired();
     }
 }

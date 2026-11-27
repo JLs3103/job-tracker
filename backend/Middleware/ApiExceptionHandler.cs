@@ -22,6 +22,8 @@ internal sealed class ApiExceptionHandler(
                 (StatusCodes.Status503ServiceUnavailable, "Job sources unavailable", "Job sources are temporarily unavailable."),
             JobArticleUnavailableException =>
                 (StatusCodes.Status422UnprocessableEntity, "Sumber lowongan tidak tersedia", "Artikel tidak lagi ditemukan di feed sumber. Buka tautan sumber untuk memeriksanya."),
+            CvTextUnavailableException cvException =>
+                (StatusCodes.Status422UnprocessableEntity, "Teks CV tidak terbaca", cvException.Message),
             AiExtractionUnavailableException =>
                 (StatusCodes.Status502BadGateway, "Ekstraksi AI gagal", "Gemini belum berhasil mengambil rincian lowongan. Periksa model dan API key, lalu coba lagi. Data yang tersimpan tidak diubah."),
             _ => (0, string.Empty, string.Empty)

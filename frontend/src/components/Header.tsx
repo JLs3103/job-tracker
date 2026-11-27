@@ -2,6 +2,7 @@ interface HeaderProps {
   lastRefresh: string | null
   isRefreshing: boolean
   onRefresh: () => void
+  onOpenProfile: () => void
 }
 
 const dateFormatter = new Intl.DateTimeFormat('id-ID', {
@@ -13,6 +14,7 @@ export function Header({
   lastRefresh,
   isRefreshing,
   onRefresh,
+  onOpenProfile,
 }: HeaderProps) {
   const refreshLabel = lastRefresh
     ? `Terakhir diperbarui pukul ${dateFormatter.format(new Date(lastRefresh))}`
@@ -36,6 +38,13 @@ export function Header({
       </a>
       <div className="header-actions">
         <p className="last-refresh" aria-live="polite">{refreshLabel}</p>
+        <button
+          className="button button-secondary"
+          type="button"
+          onClick={onOpenProfile}
+        >
+          Profil CV
+        </button>
         <button
           className="button button-primary refresh-button"
           type="button"

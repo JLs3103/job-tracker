@@ -66,14 +66,16 @@ export function JobFilters({
         <span className="field-label">Urutkan</span>
         <select
           value={sortOrder}
-          onChange={(event) =>
+          onChange={(event) => {
+            const value = event.target.value
             onSortOrderChange(
-              event.target.value === 'oldest' ? 'oldest' : 'newest',
+              value === 'oldest' || value === 'match' ? value : 'newest',
             )
-          }
+          }}
         >
           <option value="newest">Terbaru</option>
           <option value="oldest">Terlama</option>
+          <option value="match">Kecocokan Tertinggi</option>
         </select>
       </label>
     </div>

@@ -19,8 +19,17 @@ public sealed class JobPosting
 
     public string[] Qualifications { get; set; } = [];
 
+    public string[] TargetRoles { get; set; } = [];
+
+    public string[] TechnicalSkills { get; set; } = [];
+
     [MaxLength(300)]
     public string? Location { get; set; }
+
+    public int? MatchScore { get; set; }
+
+    [MaxLength(500)]
+    public string? MatchReason { get; set; }
 
     public JobStatus Status { get; set; } = JobStatus.NEW;
 

@@ -9,18 +9,22 @@ import { EmptyState } from './components/EmptyState'
 import { Header } from './components/Header'
 import { JobCard } from './components/JobCard'
 import { JobFilters } from './components/JobFilters'
+import { ProfileModal } from './components/ProfileModal'
 import { RefreshBanner } from './components/RefreshBanner'
 import { StatusTabs } from './components/StatusTabs'
 import {
   getJobs,
+  getProfile,
   getRefreshState,
   isMockApi,
   refreshJobs,
   retryJobExtraction,
   updateJobStatus,
+  updateProfile,
 } from './services/jobApi'
 import {
   jobStatuses,
+  type CandidateProfile,
   type JobPosting,
   type JobSortOrder,
   type JobSource,
@@ -76,6 +80,11 @@ function App() {
   const [updatingIds, setUpdatingIds] = useState<number[]>([])
   const [retryingExtractionIds, setRetryingExtractionIds] = useState<number[]>([])
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [profile, setProfile] = useState<CandidateProfile | null>(null)
+  const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [profileNotice, setProfileNotice] = useState<string | null>(null)
 
   const loadJobs = useCallback(async () => {
     const result = await getJobs()
@@ -85,11 +94,12 @@ function App() {
   useEffect(() => {
     let active = true
 
-    Promise.all([getJobs(), getRefreshState()])
-      .then(([result, refreshState]) => {
+    Promise.all([getJobs(), getRefreshState(), getProfile()])
+      .then(([result, refreshState, loadedProfile]) => {
         if (active) {
           setJobs(result)
           setLastRefresh(refreshState.lastSuccessfulRefreshAt)
+          setProfile(loadedProfile)
         }
       })
       .catch((error: unknown) => {
@@ -132,6 +142,8 @@ function App() {
           job.companyName,
           job.jobTitle,
           job.location ?? '',
+          ...job.targetRoles,
+          ...job.technicalSkills,
           ...job.qualifications,
         ]
           .join(' ')
@@ -139,6 +151,12 @@ function App() {
           .includes(normalizedSearch)
       })
       .sort((first, second) => {
+        if (sortOrder === 'match') {
+          const scoreDifference =
+            (second.matchScore ?? -1) - (first.matchScore ?? -1)
+          if (scoreDifference !== 0) return scoreDifference
+        }
+
         const dateDifference =
           new Date(first.publishedAt).getTime() -
           new Date(second.publishedAt).getTime()
@@ -243,12 +261,49 @@ function App() {
     changePage(requestedPage)
   }
 
+  const handleOpenProfile = async () => {
+    setProfileError(null)
+    setProfileNotice(null)
+    if (!profile) {
+      try {
+        const loaded = await getProfile()
+        setProfile(loaded)
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : 'Gagal memuat profil CV.',
+        )
+        return
+      }
+    }
+    setIsProfileOpen(true)
+  }
+
+  const handleSaveProfile = async (updatedProfile: CandidateProfile) => {
+    setIsSavingProfile(true)
+    setProfileError(null)
+    try {
+      const saved = await updateProfile(updatedProfile)
+      setProfile(saved)
+      setIsProfileOpen(false)
+      setProfileNotice(
+        'Profil CV diperbarui. Lowongan baru atau ekstraksi ulang berikutnya akan memakai profil ini.',
+      )
+    } catch (error) {
+      setProfileError(
+        error instanceof Error ? error.message : 'Gagal menyimpan profil CV.',
+      )
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
   return (
     <div className="app-shell">
       <Header
         lastRefresh={lastRefresh}
         isRefreshing={isRefreshing}
         onRefresh={handleRefresh}
+        onOpenProfile={handleOpenProfile}
       />
       <main className="main-content">
         <section className="page-intro" aria-labelledby="page-title">
@@ -269,6 +324,19 @@ function App() {
             message={refreshResult.message}
             newJobsCount={refreshResult.newJobsCount}
           />
+        )}
+        {profileNotice && (
+          <div className="refresh-banner has-new-jobs" role="status">
+            <span className="refresh-indicator" aria-hidden="true" />
+            <p>{profileNotice}</p>
+            <button
+              className="button button-quiet"
+              type="button"
+              onClick={() => setProfileNotice(null)}
+            >
+              Tutup
+            </button>
+          </div>
         )}
         {errorMessage && (
           <div className="error-banner" role="alert">
@@ -321,6 +389,7 @@ function App() {
                 <JobCard
                   key={job.id}
                   job={job}
+                  profileSkills={profile?.technicalSkills}
                   isUpdating={updatingIds.includes(job.id)}
                   isRetryingExtraction={retryingExtractionIds.includes(job.id)}
                   onRetryExtraction={handleRetryExtraction}
@@ -429,6 +498,15 @@ function App() {
         <p>Kerja IT</p>
         <p>Lowongan terkurasi untuk langkah karier berikutnya.</p>
       </footer>
+      {isProfileOpen && profile && (
+        <ProfileModal
+          profile={profile}
+          isSaving={isSavingProfile}
+          errorMessage={profileError}
+          onClose={() => setIsProfileOpen(false)}
+          onSave={handleSaveProfile}
+        />
+      )}
     </div>
   )
 }
