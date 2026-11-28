@@ -233,6 +233,11 @@ public sealed class JobIngestionRelevanceTests
                 return new HttpResponseMessage(HttpStatusCode.InternalServerError);
             }
 
+            if (host.Contains("okejobs.com", StringComparison.OrdinalIgnoreCase))
+            {
+                return CreateOkeJobsRssResponse(published);
+            }
+
             if (host.Contains("lokerblog.com", StringComparison.OrdinalIgnoreCase))
             {
                 return new HttpResponseMessage(HttpStatusCode.OK)
@@ -282,10 +287,11 @@ public sealed class JobIngestionRelevanceTests
         var result = await fetcher.FetchAsync(CancellationToken.None);
 
         Assert.Equal(["OpenKerja"], result.FailedSources);
-        Assert.Equal(6, result.Articles.Count);
+        Assert.Equal(7, result.Articles.Count);
         Assert.Contains(result.Articles, a => a.Source == JobSource.LokerBUMN);
         Assert.Contains(result.Articles, a => a.Source == JobSource.BersamaBUMN);
         Assert.Contains(result.Articles, a => a.Source == JobSource.Disnakerja);
+        Assert.Contains(result.Articles, a => a.Source == JobSource.OkeJobs);
     }
 
     [Fact]
@@ -301,6 +307,11 @@ public sealed class JobIngestionRelevanceTests
                 {
                     Content = new ThrowingStreamContent(new IOException("Connection reset by peer"))
                 };
+            }
+
+            if (host.Contains("okejobs.com", StringComparison.OrdinalIgnoreCase))
+            {
+                return CreateOkeJobsRssResponse(published);
             }
 
             if (host.Contains("lokerblog.com", StringComparison.OrdinalIgnoreCase))
@@ -352,7 +363,88 @@ public sealed class JobIngestionRelevanceTests
         var result = await fetcher.FetchAsync(CancellationToken.None);
 
         Assert.Equal(["Bukajobs"], result.FailedSources);
-        Assert.Equal(6, result.Articles.Count);
+        Assert.Equal(7, result.Articles.Count);
+    }
+
+    private static HttpResponseMessage CreateOkeJobsRssResponse(string publishedIso)
+    {
+        var rfcDate = DateTimeOffset.Parse(publishedIso).ToString("R");
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                $"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+                  <channel>
+                    <item>
+                      <title>Software Engineer</title>
+                      <link>https://okejobs.com/lowongan/software-engineer/</link>
+                      <pubDate>{rfcDate}</pubDate>
+                      <content:encoded><![CDATA[<p>C# .NET Core</p>]]></content:encoded>
+                    </item>
+                  </channel>
+                </rss>
+                """,
+                Encoding.UTF8,
+                "application/rss+xml")
+        };
+    }
+
+    [Fact]
+    public async Task JobService_UpdateStatusApplied_SyncsToCareerApplications_AndMovesOnGoing()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        await using var dbContext = new AppDbContext(options);
+        await dbContext.Database.EnsureCreatedAsync();
+
+        var job = new JobPosting
+        {
+            ExternalUrl = "https://example.com/job-1",
+            Source = JobSource.Disnakerja,
+            CompanyName = "PT Maju Teknologi",
+            JobTitle = "Frontend Developer",
+            Qualifications = ["React"],
+            Status = JobStatus.NEW,
+            PublishedAt = DateTimeOffset.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        dbContext.JobPostings.Add(job);
+        await dbContext.SaveChangesAsync();
+
+        var jobService = new JobService(
+            dbContext,
+            new StubJobFetcherService(new JobFetchResult([], [])),
+            new StubAiExtractorService(_ => new JobExtraction(string.Empty, string.Empty, [], null)),
+            TimeProvider.System,
+            NullLogger<JobService>.Instance);
+
+        await jobService.UpdateStatusAsync(job.Id, JobStatus.APPLIED, CancellationToken.None);
+
+        var careerService = new CareerTrackerService(dbContext, TimeProvider.System);
+        var apps = await careerService.GetApplicationsAsync(null, null, CancellationToken.None);
+        Assert.Single(apps);
+        Assert.Equal("Lowongan IT (Disnakerja)", apps[0].AppliedVia);
+        Assert.Equal("Applied", apps[0].Status);
+        Assert.Equal(ApplicationResult.InProgress, apps[0].Result);
+
+        var onGoing = await careerService.CreateOnGoingAsync(
+            new CreateOnGoingJobRequest
+            {
+                Company = "PT Instagram",
+                JobTitle = "Fullstack",
+                Link = "https://www.instagram.com/p/abc/"
+            },
+            CancellationToken.None);
+
+        var moved = await careerService.MoveOnGoingToAppliedAsync(onGoing.Id, null, CancellationToken.None);
+        Assert.Equal("Instagram", moved.AppliedVia);
+        Assert.Empty(await careerService.GetOnGoingAsync(null, CancellationToken.None));
+        Assert.Equal(2, (await careerService.GetApplicationsAsync(null, null, CancellationToken.None)).Count);
     }
 
     private sealed class ThrowingStreamContent(Exception exception) : HttpContent

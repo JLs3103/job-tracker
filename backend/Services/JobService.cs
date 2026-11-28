@@ -269,6 +269,32 @@ public sealed class JobService(
         }
 
         job.Status = status;
+
+        if (status == JobStatus.APPLIED)
+        {
+            var alreadyTracked = await dbContext.JobApplications.AnyAsync(
+                item => item.SourceJobPostingId == job.Id ||
+                    (item.AppliedLink != null && item.AppliedLink == job.ExternalUrl),
+                cancellationToken);
+
+            if (!alreadyTracked)
+            {
+                var now = timeProvider.GetUtcNow();
+                dbContext.JobApplications.Add(new JobApplication
+                {
+                    Company = job.CompanyName,
+                    JobTitle = job.JobTitle,
+                    AppliedVia = $"Lowongan IT ({job.Source})",
+                    AppliedLink = job.ExternalUrl,
+                    AppliedDate = now,
+                    LastUpdated = now,
+                    Status = "Applied",
+                    Result = ApplicationResult.InProgress,
+                    SourceJobPostingId = job.Id
+                });
+            }
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToResponse(job);
     }

@@ -13,8 +13,12 @@ interface JobFilters {
   search?: string
 }
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5227'
-export const isMockApi = import.meta.env.VITE_USE_MOCK_API !== 'false'
+const apiBaseUrl =
+  import.meta.env.VITE_API_BASE_URL ??
+  (import.meta.env.DEV ? 'http://localhost:5227' : '')
+export const isMockApi = import.meta.env.DEV
+  ? import.meta.env.VITE_USE_MOCK_API !== 'false'
+  : import.meta.env.VITE_USE_MOCK_API === 'true'
 const mockSources: JobSource[] = [
   'Disnakerja',
   'Bukajobs',
@@ -23,6 +27,7 @@ const mockSources: JobSource[] = [
   'LokerBUMN',
   'BersamaBUMN',
   'OpenKerja',
+  'OkeJobs',
 ]
 
 const hoursAgo = (hours: number) =>

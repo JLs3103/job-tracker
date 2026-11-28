@@ -5,8 +5,10 @@ import {
   useState,
   type FormEvent,
 } from 'react'
+import { CareerTracker } from './components/CareerTracker'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { EmptyState } from './components/EmptyState'
-import { Header } from './components/Header'
+import { Header, type AppPage } from './components/Header'
 import { JobCard } from './components/JobCard'
 import { JobFilters } from './components/JobFilters'
 import { ProfileModal } from './components/ProfileModal'
@@ -66,6 +68,7 @@ function getPaginationItems(
 }
 
 function App() {
+  const [activePage, setActivePage] = useState<AppPage>('jobs')
   const [jobs, setJobs] = useState<JobPosting[]>([])
   const [activeStatus, setActiveStatus] = useState<JobStatus>('NEW')
   const [source, setSource] = useState<JobSource | 'ALL'>('ALL')
@@ -300,12 +303,18 @@ function App() {
   return (
     <div className="app-shell">
       <Header
+        activePage={activePage}
+        onPageChange={setActivePage}
         lastRefresh={lastRefresh}
         isRefreshing={isRefreshing}
         onRefresh={handleRefresh}
         onOpenProfile={handleOpenProfile}
       />
       <main className="main-content">
+        {activePage === 'career' ? (
+          <CareerTracker />
+        ) : (
+          <>
         <section className="page-intro" aria-labelledby="page-title">
           <div>
             <p className="eyebrow">RUANG PENCARIAN KERJA</p>
@@ -333,18 +342,6 @@ function App() {
               className="button button-quiet"
               type="button"
               onClick={() => setProfileNotice(null)}
-            >
-              Tutup
-            </button>
-          </div>
-        )}
-        {errorMessage && (
-          <div className="error-banner" role="alert">
-            <p>{errorMessage}</p>
-            <button
-              className="button button-quiet"
-              type="button"
-              onClick={() => setErrorMessage(null)}
             >
               Tutup
             </button>
@@ -493,9 +490,11 @@ function App() {
             hasSourceFilter={source !== 'ALL'}
           />
         )}
+          </>
+        )}
       </main>
       <footer className="app-footer">
-        <p>Kerja IT</p>
+        <p>Kerja IT · © 2026 Joan Putra Feodora Lase (JLs3103)</p>
         <p>Lowongan terkurasi untuk langkah karier berikutnya.</p>
       </footer>
       {isProfileOpen && profile && (
@@ -505,6 +504,15 @@ function App() {
           errorMessage={profileError}
           onClose={() => setIsProfileOpen(false)}
           onSave={handleSaveProfile}
+        />
+      )}
+      {errorMessage && (
+        <ConfirmDialog
+          title="Terjadi Kesalahan"
+          message={errorMessage}
+          isAlertOnly
+          onConfirm={() => setErrorMessage(null)}
+          onCancel={() => setErrorMessage(null)}
         />
       )}
     </div>

@@ -13,6 +13,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
 
     public DbSet<JobRefreshState> JobRefreshStates => Set<JobRefreshState>();
 
+    public DbSet<JobApplication> JobApplications => Set<JobApplication>();
+
+    public DbSet<OnGoingJob> OnGoingJobs => Set<OnGoingJob>();
+
+    public DbSet<CareerSite> CareerSites => Set<CareerSite>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<JobPosting>();
@@ -45,6 +51,47 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         var refreshState = modelBuilder.Entity<JobRefreshState>();
         refreshState.HasKey(state => state.Id);
         refreshState.Property(state => state.LastSuccessfulRefreshAt)
+            .HasConversion(
+                value => value.ToUnixTimeMilliseconds(),
+                value => DateTimeOffset.FromUnixTimeMilliseconds(value))
+            .IsRequired();
+
+        var application = modelBuilder.Entity<JobApplication>();
+        application.HasKey(item => item.Id);
+        application.HasIndex(item => item.AppliedDate);
+        application.HasIndex(item => item.SourceJobPostingId);
+        application.Property(item => item.Company).HasMaxLength(300).IsRequired();
+        application.Property(item => item.JobTitle).HasMaxLength(300).IsRequired();
+        application.Property(item => item.AppliedVia).HasMaxLength(120).IsRequired();
+        application.Property(item => item.AppliedLink).HasMaxLength(2048);
+        application.Property(item => item.Status).HasMaxLength(120).IsRequired();
+        application.Property(item => item.Result).HasConversion<string>().IsRequired();
+        ConfigureUnixTimestamp(application.Property(item => item.AppliedDate));
+        ConfigureUnixTimestamp(application.Property(item => item.LastUpdated));
+
+        var onGoing = modelBuilder.Entity<OnGoingJob>();
+        onGoing.HasKey(item => item.Id);
+        onGoing.HasIndex(item => item.CreatedAt);
+        onGoing.Property(item => item.Company).HasMaxLength(300).IsRequired();
+        onGoing.Property(item => item.JobTitle).HasMaxLength(300).IsRequired();
+        onGoing.Property(item => item.Link).HasMaxLength(2048).IsRequired();
+        onGoing.Property(item => item.Notes).HasMaxLength(500);
+        ConfigureUnixTimestamp(onGoing.Property(item => item.CreatedAt));
+
+        var careerSite = modelBuilder.Entity<CareerSite>();
+        careerSite.HasKey(item => item.Id);
+        careerSite.Property(item => item.Name).HasMaxLength(300).IsRequired();
+        careerSite.Property(item => item.Url).HasMaxLength(2048).IsRequired();
+        careerSite.Property(item => item.LastJobUpdated).HasMaxLength(500);
+        careerSite.Property(item => item.LastCheckedAt)
+            .HasConversion(
+                value => value.HasValue ? value.Value.ToUnixTimeMilliseconds() : (long?)null,
+                value => value.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(value.Value) : null);
+    }
+
+    private static void ConfigureUnixTimestamp(PropertyBuilder<DateTimeOffset> property)
+    {
+        property
             .HasConversion(
                 value => value.ToUnixTimeMilliseconds(),
                 value => DateTimeOffset.FromUnixTimeMilliseconds(value))

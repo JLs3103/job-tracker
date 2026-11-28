@@ -1,5 +1,7 @@
 node_modules/
 frontend/dist/
+backend/wwwroot/
+publish/
 backend/bin/
 backend/obj/
 backend.Tests/bin/
@@ -16,3 +18,4 @@ __pycache__/
 backend/appsettings.Development.json
 documentation/
 clear_jobs.py
+Career.xlsx

@@ -37,10 +37,19 @@ public sealed class ProfileService(
     };
 
     private readonly SemaphoreSlim _fileLock = new(1, 1);
-    private readonly string _profilePath = Path.Combine(
-        environment.ContentRootPath,
-        "Data",
-        "profile.json");
+    private readonly string _profilePath = ResolveProfilePath(environment.ContentRootPath);
+
+    private static string ResolveProfilePath(string contentRootPath)
+    {
+        var contentRootProfile = Path.Combine(contentRootPath, "Data", "profile.json");
+        if (File.Exists(contentRootProfile))
+        {
+            return contentRootProfile;
+        }
+
+        var baseDirProfile = Path.Combine(AppContext.BaseDirectory, "Data", "profile.json");
+        return File.Exists(baseDirProfile) ? baseDirProfile : contentRootProfile;
+    }
 
     public async Task<CandidateProfile> GetProfileAsync(
         CancellationToken cancellationToken)

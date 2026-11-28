@@ -5,6 +5,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <ApplicationIcon Condition="Exists('app.ico')">app.ico</ApplicationIcon>
+    <Product>Kerja IT — Personal Job Tracker</Product>
+    <Authors>Joan Putra Feodora Lase (JLs3103)</Authors>
+    <Copyright>Copyright © 2026 Joan Putra Feodora Lase (JLs3103)</Copyright>
+    <Version>1.0.0</Version>
     <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 

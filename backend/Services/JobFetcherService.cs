@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 using backend.Models;
 
 namespace backend.Services;
@@ -29,7 +31,9 @@ public sealed class JobFetcherService(
             [JobSource.BersamaBUMN] =
                 $"https://www.bersamabumn.com/wp-json/wp/v2/lowongan?per_page={FeedPageSize}",
             [JobSource.OpenKerja] =
-                $"https://www.openkerja.id/wp-json/wp/v2/lowongan?per_page={FeedPageSize}"
+                $"https://www.openkerja.id/wp-json/wp/v2/lowongan?per_page={FeedPageSize}",
+            [JobSource.OkeJobs] =
+                "https://okejobs.com/lowongan/feed"
         };
 
     private static readonly Regex ScriptAndStylePattern = new(
@@ -100,19 +104,35 @@ public sealed class JobFetcherService(
                     cancellationToken);
                 response.EnsureSuccessStatusCode();
 
-                if (source != JobSource.LokerBlog)
+                if (source != JobSource.LokerBlog && source != JobSource.OkeJobs)
                 {
                     totalPages = ReadWordPressTotalPages(response);
                 }
 
                 await using var stream =
                     await response.Content.ReadAsStreamAsync(cancellationToken);
-                using var document = await JsonDocument.ParseAsync(
-                    stream,
-                    cancellationToken: cancellationToken);
-                var pageArticles = source == JobSource.LokerBlog
-                    ? ParseBloggerFeed(document.RootElement, source)
-                    : ParseWordPressFeed(document.RootElement, source);
+                IReadOnlyList<JobArticle> pageArticles;
+                string? bloggerNextUrl = null;
+                if (source == JobSource.OkeJobs)
+                {
+                    pageArticles = await ParseRssFeedAsync(
+                        stream,
+                        source,
+                        cancellationToken);
+                }
+                else
+                {
+                    using var document = await JsonDocument.ParseAsync(
+                        stream,
+                        cancellationToken: cancellationToken);
+                    pageArticles = source == JobSource.LokerBlog
+                        ? ParseBloggerFeed(document.RootElement, source)
+                        : ParseWordPressFeed(document.RootElement, source);
+                    if (source == JobSource.LokerBlog)
+                    {
+                        bloggerNextUrl = ReadBloggerNextUrl(document.RootElement);
+                    }
+                }
 
                 var newPageArticles = pageArticles
                     .Where(article => seenArticleUrls.Add(article.ExternalUrl))
@@ -133,9 +153,13 @@ public sealed class JobFetcherService(
                     break;
                 }
 
-                if (source == JobSource.LokerBlog)
+                if (source == JobSource.OkeJobs)
                 {
-                    currentUrl = ReadBloggerNextUrl(document.RootElement);
+                    currentUrl = null;
+                }
+                else if (source == JobSource.LokerBlog)
+                {
+                    currentUrl = bloggerNextUrl;
                 }
                 else if (totalPages is not null
                     ? page >= totalPages.Value
@@ -161,11 +185,12 @@ public sealed class JobFetcherService(
                 source);
             return new SourceFetchResult(source, articles, exception);
         }
-        catch (JsonException exception)
+        catch (Exception exception)
+            when (exception is JsonException or XmlException)
         {
             logger.LogWarning(
                 exception,
-                "Invalid JSON received from {JobSource}",
+                "Invalid feed payload received from {JobSource}",
                 source);
             return new SourceFetchResult(source, articles, exception);
         }
@@ -178,6 +203,51 @@ public sealed class JobFetcherService(
                 source);
             return new SourceFetchResult(source, articles, exception);
         }
+    }
+
+    private static async Task<IReadOnlyList<JobArticle>> ParseRssFeedAsync(
+        Stream stream,
+        JobSource source,
+        CancellationToken cancellationToken)
+    {
+        var document = await XDocument.LoadAsync(
+            stream,
+            LoadOptions.None,
+            cancellationToken);
+        var channel = document.Root?.Element("channel");
+        if (channel is null)
+        {
+            throw new XmlException($"The {source} RSS channel element is missing.");
+        }
+
+        XNamespace contentNs = "http://purl.org/rss/1.0/modules/content/";
+        var articles = new List<JobArticle>();
+
+        foreach (var item in channel.Elements("item"))
+        {
+            var title = item.Element("title")?.Value;
+            var link = item.Element("link")?.Value;
+            var content = item.Element(contentNs + "encoded")?.Value
+                ?? item.Element("description")?.Value
+                ?? string.Empty;
+            var pubDate = ParseDate(item.Element("pubDate")?.Value);
+
+            if (string.IsNullOrWhiteSpace(title) ||
+                string.IsNullOrWhiteSpace(link) ||
+                pubDate is null)
+            {
+                continue;
+            }
+
+            articles.Add(new JobArticle(
+                source,
+                CleanText(title),
+                CleanText(content),
+                ValidateUrl(link.Trim()),
+                pubDate.Value));
+        }
+
+        return articles;
     }
 
     private static IReadOnlyList<JobArticle> ParseBloggerFeed(

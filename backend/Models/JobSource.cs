@@ -8,5 +8,6 @@ public enum JobSource
     Disnakerja,
     LokerBUMN,
     BersamaBUMN,
-    OpenKerja
+    OpenKerja,
+    OkeJobs
 }

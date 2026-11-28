@@ -16,6 +16,7 @@ export const jobSources = [
   'LokerBUMN',
   'BersamaBUMN',
   'OpenKerja',
+  'OkeJobs',
 ] as const
 
 export type JobSource = (typeof jobSources)[number]
