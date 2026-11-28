@@ -19,6 +19,9 @@ const sourceLabels: Record<JobSource | 'ALL', string> = {
   Bukajobs: 'Bukajobs',
   BrowseLoker: 'BrowseLoker',
   LokerBlog: 'Loker Blog',
+  LokerBUMN: 'LokerBUMN',
+  BersamaBUMN: 'BersamaBUMN',
+  OpenKerja: 'OpenKerja',
 }
 
 export function JobFilters({

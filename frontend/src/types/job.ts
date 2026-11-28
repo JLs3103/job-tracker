@@ -13,6 +13,9 @@ export const jobSources = [
   'Bukajobs',
   'BrowseLoker',
   'LokerBlog',
+  'LokerBUMN',
+  'BersamaBUMN',
+  'OpenKerja',
 ] as const
 
 export type JobSource = (typeof jobSources)[number]

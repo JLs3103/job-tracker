@@ -20,6 +20,9 @@ const mockSources: JobSource[] = [
   'Bukajobs',
   'BrowseLoker',
   'LokerBlog',
+  'LokerBUMN',
+  'BersamaBUMN',
+  'OpenKerja',
 ]
 
 const hoursAgo = (hours: number) =>

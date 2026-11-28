@@ -221,6 +221,156 @@ public sealed class JobIngestionRelevanceTests
         Assert.Throws<ArgumentException>(() => PdfTextExtractor.ExtractText(stream));
     }
 
+    [Fact]
+    public async Task JobFetcher_FetchesAllSevenSources_AndIsolatesSingleSourceFailure()
+    {
+        var published = DateTimeOffset.UtcNow.AddHours(-1).ToString("O");
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            var host = request.RequestUri?.Host ?? string.Empty;
+            if (host.Contains("openkerja.id", StringComparison.OrdinalIgnoreCase))
+            {
+                return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+            }
+
+            if (host.Contains("lokerblog.com", StringComparison.OrdinalIgnoreCase))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        $$"""
+                        {
+                          "feed": {
+                            "entry": [
+                              {
+                                "title": { "$t": "IT Support" },
+                                "content": { "$t": "<p>Helpdesk</p>" },
+                                "published": { "$t": "{{published}}" },
+                                "link": [{ "rel": "alternate", "href": "https://www.lokerblog.com/it-support" }]
+                              }
+                            ]
+                          }
+                        }
+                        """,
+                        Encoding.UTF8,
+                        "application/json")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    $$"""
+                    [
+                      {
+                        "title": { "rendered": "Backend Developer" },
+                        "content": { "rendered": "<p>C# .NET</p>" },
+                        "date_gmt": "{{published}}",
+                        "link": "https://{{host}}/backend-dev"
+                      }
+                    ]
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+
+        var fetcher = new JobFetcherService(
+            new HttpClient(handler),
+            NullLogger<JobFetcherService>.Instance);
+
+        var result = await fetcher.FetchAsync(CancellationToken.None);
+
+        Assert.Equal(["OpenKerja"], result.FailedSources);
+        Assert.Equal(6, result.Articles.Count);
+        Assert.Contains(result.Articles, a => a.Source == JobSource.LokerBUMN);
+        Assert.Contains(result.Articles, a => a.Source == JobSource.BersamaBUMN);
+        Assert.Contains(result.Articles, a => a.Source == JobSource.Disnakerja);
+    }
+
+    [Fact]
+    public async Task JobFetcher_IsolatesStreamIOException_FromOtherSources()
+    {
+        var published = DateTimeOffset.UtcNow.AddHours(-1).ToString("O");
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            var host = request.RequestUri?.Host ?? string.Empty;
+            if (host.Contains("bukajobs.com", StringComparison.OrdinalIgnoreCase))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ThrowingStreamContent(new IOException("Connection reset by peer"))
+                };
+            }
+
+            if (host.Contains("lokerblog.com", StringComparison.OrdinalIgnoreCase))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        $$"""
+                        {
+                          "feed": {
+                            "entry": [
+                              {
+                                "title": { "$t": "IT Support" },
+                                "content": { "$t": "<p>Helpdesk</p>" },
+                                "published": { "$t": "{{published}}" },
+                                "link": [{ "rel": "alternate", "href": "https://www.lokerblog.com/it-support" }]
+                              }
+                            ]
+                          }
+                        }
+                        """,
+                        Encoding.UTF8,
+                        "application/json")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    $$"""
+                    [
+                      {
+                        "title": { "rendered": "Backend Developer" },
+                        "content": { "rendered": "<p>C# .NET</p>" },
+                        "date_gmt": "{{published}}",
+                        "link": "https://{{host}}/backend-dev"
+                      }
+                    ]
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+
+        var fetcher = new JobFetcherService(
+            new HttpClient(handler),
+            NullLogger<JobFetcherService>.Instance);
+
+        var result = await fetcher.FetchAsync(CancellationToken.None);
+
+        Assert.Equal(["Bukajobs"], result.FailedSources);
+        Assert.Equal(6, result.Articles.Count);
+    }
+
+    private sealed class ThrowingStreamContent(Exception exception) : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context) => Task.FromException(exception);
+
+        protected override Task<Stream> CreateContentReadStreamAsync() =>
+            Task.FromException<Stream>(exception);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
+
     private static CandidateProfile DefaultTestProfile() => new()
     {
         TargetRoles = ["Full Stack Developer", "Frontend Developer", "IT Security"],

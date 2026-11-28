@@ -5,5 +5,8 @@ public enum JobSource
     LokerBlog,
     Bukajobs,
     BrowseLoker,
-    Disnakerja
+    Disnakerja,
+    LokerBUMN,
+    BersamaBUMN,
+    OpenKerja
 }

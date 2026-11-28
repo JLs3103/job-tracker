@@ -23,7 +23,13 @@ public sealed class JobFetcherService(
             [JobSource.BrowseLoker] =
                 $"https://browseloker.lowongankerjacareer.com/wp-json/wp/v2/posts?per_page={FeedPageSize}",
             [JobSource.Disnakerja] =
-                $"https://www.disnakerja.com/wp-json/wp/v2/posts?per_page={FeedPageSize}"
+                $"https://www.disnakerja.com/wp-json/wp/v2/posts?per_page={FeedPageSize}",
+            [JobSource.LokerBUMN] =
+                $"https://lokerbumn.com/wp-json/wp/v2/posts?per_page={FeedPageSize}",
+            [JobSource.BersamaBUMN] =
+                $"https://www.bersamabumn.com/wp-json/wp/v2/lowongan?per_page={FeedPageSize}",
+            [JobSource.OpenKerja] =
+                $"https://www.openkerja.id/wp-json/wp/v2/lowongan?per_page={FeedPageSize}"
         };
 
     private static readonly Regex ScriptAndStylePattern = new(
@@ -146,7 +152,8 @@ public sealed class JobFetcherService(
 
             return new SourceFetchResult(source, articles, null);
         }
-        catch (HttpRequestException exception)
+        catch (Exception exception)
+            when (exception is HttpRequestException or IOException)
         {
             logger.LogWarning(
                 exception,
